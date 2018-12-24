@@ -92,7 +92,7 @@ public class NetworkUtils {
 			while ((content = in.readLine()) != null) {
 				stringBuffer.append(content);
 			}
-			Log.d("------ping-----", "result content : " + stringBuffer.toString());
+			Log.d("bbb", "result content : " + stringBuffer.toString());
 			// ping的状态
 			int status = p.waitFor();
 			if (status == 0) {
@@ -106,7 +106,7 @@ public class NetworkUtils {
 		} catch (InterruptedException e) {
 			result = "InterruptedException";
 		} finally {
-			Log.d("----result---", "result = " + result);
+			Log.d("bbb", "result = " + result);
 		}
 		return false;
 	}

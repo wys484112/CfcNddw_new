@@ -72,16 +72,15 @@ public class DdwService extends Service {
     private ConnectivityManager mConnectivityManager;
 
 
-
-//    public static final String serial = "TestSerial";//Build.SERIAL;
+    //    public static final String serial = "TestSerial";//Build.SERIAL;
     public static String serial = Build.SERIAL;
-    public static int  mConnectedMinutes = 0;
-    public static boolean  isConnected = false;
+    public static int mConnectedMinutes = 0;
+    public static boolean isConnected = false;
     public static String mUpTime;
 
 
-    public static String  mDayOfYearNow = " ";
-    public static boolean  isUploadData = false;
+    public static String mDayOfYearNow = " ";
+    public static boolean isUploadData = false;
     private DdwData mDATA = new DdwData();
 //    public static String APPID = "52f26b1d55df6b5488d8a0a54c823c56"; //wuyinshengs appid
 
@@ -91,7 +90,7 @@ public class DdwService extends Service {
     public void onCreate() {
         super.onCreate();
         Log.d(TAG, "onCreate");
-        Bmob.initialize(this,APPID);
+        Bmob.initialize(this, APPID);
 
 
         mSharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
@@ -138,6 +137,7 @@ public class DdwService extends Service {
     public void onDestroy() {
         super.onDestroy();
     }
+
     private String convert(long t) {
         int s = (int) (t % 60);
         int m = (int) ((t / 60) % 60);
@@ -153,13 +153,14 @@ public class DdwService extends Service {
             return "0" + String.valueOf(n);
         }
     }
-    private String getUptime(){
+
+    private String getUptime() {
         long ut = SystemClock.elapsedRealtime() / 1000;
 
         if (ut == 0) {
             ut = 1;
         }
-        mUpTime=convert(ut);
+        mUpTime = convert(ut);
         return mUpTime;
     }
 
@@ -171,17 +172,18 @@ public class DdwService extends Service {
         return serial;
     }
 
-    private void initDdwData(){
+    private void initDdwData() {
         mDATA.setConnected(isNetWorkConnected());
         mDATA.setmConnectedMinutes(getmConnectedMinutes());
         mDATA.setSerial(getSerial());
         mDATA.setmUpTime(getUptime());
     }
 
-    private void postData(){
+    private void postData() {
         initDdwData();
         RxBus.get().post(mDATA);
     }
+
     private void monitorNetworkConnectionStatus() {
         BroadcastReceiver receiver = new BroadcastReceiver() {
             public void onReceive(Context context, Intent intent) {
@@ -195,29 +197,32 @@ public class DdwService extends Service {
         IntentFilter intentFilter = new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION);
         registerReceiver(receiver, intentFilter);
     }
-    
+
 
     private void connectStatusConfig() {
 
 
         //异步获取网络连接状态
-        Observable.create(new ObservableOnSubscribe<Boolean>(){
+        Observable.create(new ObservableOnSubscribe<Boolean>() {
             @Override
             public void subscribe(ObservableEmitter<Boolean> e) throws Exception {
-                Log.e("bbb","subscribe   ObservableEmitter==111");
+                Log.e("bbb", "subscribe   ObservableEmitter==111");
 
-                Boolean isConnected=NetworkUtils.isNetworkConnected(DdwService.this);
-                Log.e("bbb","subscribe   ObservableEmitter=="+isConnected);
+                Boolean isConnected = NetworkUtils.ping();//(DdwService.this);
+                Log.e("bbb", "subscribe   ObservableEmitter==" + isConnected);
 
                 e.onNext(isConnected);
             }
-        }).subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread()).subscribe(new Consumer<Boolean>() {
-            @Override
-            public void accept(Boolean aBoolean) throws Exception {
-                Log.e("bbb","subscribe   aBoolean=="+aBoolean);
-            }
-        });
-        isConnected=NetworkUtils.isNetworkConnected(this);
+        }).subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(new Consumer<Boolean>() {
+                    @Override
+                    public void accept(Boolean aBoolean) throws Exception {
+                        isConnected=aBoolean;
+                        Log.e("bbb", "subscribe   aBoolean==" + aBoolean);
+                    }
+                });
+        isConnected = NetworkUtils.isNetworkConnected(this);
 //
 //        if (mConnectivityManager != null) {
 //            NetworkInfo info = mConnectivityManager.getActiveNetworkInfo();
@@ -232,8 +237,9 @@ public class DdwService extends Service {
 //        }
 //        isConnected=false;
     }
+
     private boolean isNetWorkConnected() {
-    	return isConnected;
+        return isConnected;
     }
 
     private static final int EVENT_UPDATE_STATS = 500;
@@ -241,75 +247,77 @@ public class DdwService extends Service {
 
     private Handler mHandler;
 
-    private void uploadData(int minutes){
-        NDdwInfo  mInfo = new NDdwInfo();
+    private void uploadData(int minutes) {
+        NDdwInfo mInfo = new NDdwInfo();
         mInfo.setSerialNum(serial);
         mInfo.setDayRunTime(minutes);
         mInfo.save(new SaveListener<String>() {
             @Override
-            public void done(String objectId,BmobException e) {
-                if(e==null){
+            public void done(String objectId, BmobException e) {
+                if (e == null) {
                     mConnectedMinutes = 1;
                     mSharedPreferences.edit().putInt(PREF_CONNECTED_MINUTES, 1).commit();
-                    Log.e("aaa","添加数据成功，返回objectId为："+objectId);
-                }else{
-                    Log.e("aaa","创建数据失败：" + e.getMessage());
+                    Log.e("aaa", "添加数据成功，返回objectId为：" + objectId);
+                } else {
+                    Log.e("aaa", "创建数据失败：" + e.getMessage());
                 }
             }
         });
     }
 
-    int aa=0;
-    private  class MyHandler extends Handler {
+    int aa = 0;
+
+    private class MyHandler extends Handler {
         @Override
         public void handleMessage(Message msg) {
-			switch (msg.what) {
-			case EVENT_UPDATE_STATS:
-				Log.e(TAG, "getNowTime==" + TimeUtils.getNowTime());
-				mConnectedMinutes = mSharedPreferences.getInt(PREF_CONNECTED_MINUTES, 0);
-				String mDayOfYearRecorded = mSharedPreferences.getString(PREF_DAY_MONTH_YEAR_RECORD, " ");
-				mDayOfYearNow = TimeUtils.getNowTime();
+            switch (msg.what) {
+                case EVENT_UPDATE_STATS:
+                    Log.e(TAG, "getNowTime==" + TimeUtils.getNowTime());
+                    mConnectedMinutes = mSharedPreferences.getInt(PREF_CONNECTED_MINUTES, 0);
+                    String mDayOfYearRecorded = mSharedPreferences.getString(PREF_DAY_MONTH_YEAR_RECORD, " ");
+                    mDayOfYearNow = TimeUtils.getNowTime();
 
 //				if(mConnectedMinutes<60){
-				if (mDayOfYearNow.equals(mDayOfYearRecorded)) {
-					if (isNetWorkConnected()) {
-						Log.e(TAG,"111");
-						//������������ʱ���ۼ�
-						Log.e(TAG,"minutesRecorded=="+mConnectedMinutes);
-						mConnectedMinutes++;
-						mSharedPreferences.edit().putInt(PREF_CONNECTED_MINUTES, mConnectedMinutes).commit();
-					}
+                    if (mDayOfYearNow.equals(mDayOfYearRecorded)) {
+                        if (isNetWorkConnected()) {
+                            Log.e(TAG, "111");
+                            //������������ʱ���ۼ�
+                            Log.e(TAG, "minutesRecorded==" + mConnectedMinutes);
+                            mConnectedMinutes++;
+                            mSharedPreferences.edit().putInt(PREF_CONNECTED_MINUTES, mConnectedMinutes).commit();
+                        }
 
-				} else {
-					if (isNetWorkConnected()) {
-						// �ϴ����ݵ����������ݿ�
-						isUploadData = true;
-						Log.e(TAG,"222");
-						//��������ʱ�仹ԭ
-                        uploadData(mConnectedMinutes);
-                        mSharedPreferences.edit().putString(PREF_DAY_MONTH_YEAR_RECORD, mDayOfYearNow).commit();
-					}
+                    } else {
+                        if (isNetWorkConnected()) {
+                            // �ϴ����ݵ����������ݿ�
+                            isUploadData = true;
+                            Log.e(TAG, "222");
+                            //��������ʱ�仹ԭ
+                            uploadData(mConnectedMinutes);
+                            mSharedPreferences.edit().putString(PREF_DAY_MONTH_YEAR_RECORD, mDayOfYearNow).commit();
+                        }
 
-				}
+                    }
 //                postData();
-				sendEmptyMessageDelayed(EVENT_UPDATE_STATS, 60000);
-				break;
+                    sendEmptyMessageDelayed(EVENT_UPDATE_STATS, 60000);
+                    break;
                 case EVENT_UPDATE_DISPLAY:
                     postData();
                     sendEmptyMessageDelayed(EVENT_UPDATE_DISPLAY, 1000);
-                break;
+                    break;
 
             }
         }
     }
 
     //每隔 1s 执行一次任务，立即执行第一次任务，执行无限次
-    private  DisposableObserver<Long> getTimeDemoObserver(){
-        return  new DisposableObserver<Long>() {
+    private DisposableObserver<Long> getTimeDemoObserver() {
+        return new DisposableObserver<Long>() {
             @Override
             public void onNext(Long aLong) {
                 postData();
             }
+
             @Override
             public void onError(Throwable e) {
 
@@ -321,7 +329,9 @@ public class DdwService extends Service {
             }
         };
     }
+
     CompositeDisposable mCompositeDisposable = new CompositeDisposable();
+
     private void startPostData() {
         Log.d(TAG, "startPostData");
         mCompositeDisposable = new CompositeDisposable();
@@ -366,5 +376,5 @@ public class DdwService extends Service {
 
         }
     }
-    
+
 }
