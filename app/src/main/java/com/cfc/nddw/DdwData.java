@@ -5,7 +5,8 @@ import android.os.Build;
 public class DdwData {
     private  int  mConnectedMinutes = 0;
     private  boolean  isConnected = false;
-    private  final String serial = Build.SERIAL;
+    private   String serial;
+    private  String  mUpTime;
 
     public int getmConnectedMinutes() {
         return mConnectedMinutes;
@@ -23,7 +24,19 @@ public class DdwData {
         isConnected = connected;
     }
 
+    public void setSerial(String serial) {
+        this.serial = serial;
+    }
+
     public String getSerial() {
         return serial;
+    }
+
+    public String getmUpTime() {
+        return mUpTime;
+    }
+
+    public void setmUpTime(String mUpTime) {
+        this.mUpTime = mUpTime;
     }
 }

@@ -36,17 +36,31 @@ import android.widget.Toast;
 
 import com.hwangjr.rxbus.RxBus;
 
+import java.lang.ref.WeakReference;
 import java.text.BreakIterator;
 import java.util.Calendar;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import cn.bmob.v3.Bmob;
 import cn.bmob.v3.listener.SaveListener;
 import cn.bmob.v3.exception.BmobException;
+import io.reactivex.Observable;
+import io.reactivex.ObservableEmitter;
+import io.reactivex.ObservableOnSubscribe;
+import io.reactivex.Scheduler;
+import io.reactivex.android.schedulers.AndroidSchedulers;
+import io.reactivex.annotations.NonNull;
+import io.reactivex.disposables.CompositeDisposable;
+import io.reactivex.functions.Consumer;
+import io.reactivex.observers.DisposableObserver;
+import io.reactivex.schedulers.Schedulers;
+
+import static android.icu.lang.UCharacter.GraphemeClusterBreak.T;
 
 public class DdwService extends Service {
 
-    private static final String TAG = "DdwService";
+    private static final String TAG = "aaa";
     private static final boolean DBG = true;
 
 
@@ -58,10 +72,13 @@ public class DdwService extends Service {
     private ConnectivityManager mConnectivityManager;
 
 
+
 //    public static final String serial = "TestSerial";//Build.SERIAL;
-    public static final String serial = Build.SERIAL;
+    public static String serial = Build.SERIAL;
     public static int  mConnectedMinutes = 0;
     public static boolean  isConnected = false;
+    public static String mUpTime;
+
 
     public static String  mDayOfYearNow = " ";
     public static boolean  isUploadData = false;
@@ -74,34 +91,91 @@ public class DdwService extends Service {
     public void onCreate() {
         super.onCreate();
         Log.d(TAG, "onCreate");
+        Bmob.initialize(this,APPID);
+
+
+        mSharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
+        mConnectivityManager = (ConnectivityManager)
+                getSystemService(Context.CONNECTIVITY_SERVICE);
+        mConnectedMinutes = mSharedPreferences.getInt(PREF_CONNECTED_MINUTES, 0);
+        connectStatusConfig();
+        getUptime();
+
+        monitorNetworkConnectionStatus();
+        //任务轮询调度方式  first  handler+
+        mHandler = new MyHandler();
+        mHandler.sendEmptyMessage(EVENT_UPDATE_STATS);
+//        mHandler.sendEmptyMessage(EVENT_UPDATE_DISPLAY);
+
+
+        //任务轮询调度方式  second  rxjava interval
+//        startPostData();
+
     }
 
     @Override
     public IBinder onBind(Intent intent) {
-        return null;
+        return mBinder;
+    }
+
+    @Override
+    public boolean onUnbind(Intent intent) {
+        return super.onUnbind(intent);
+    }
+
+    @Override
+    public void onRebind(Intent intent) {
+        super.onRebind(intent);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "onStartCommand");
-        Bmob.initialize(this,APPID);
-
-
-        mHandler = new MyHandler();
-        mSharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
-        mConnectivityManager = (ConnectivityManager)
-                getSystemService(Context.CONNECTIVITY_SERVICE);
-        mConnectedMinutes = mSharedPreferences.getInt(PREF_CONNECTED_MINUTES, 0);
-        monitorNetworkConnectionStatus();
-        mHandler.sendEmptyMessage(EVENT_UPDATE_STATS);
-        mHandler.sendEmptyMessage(EVENT_UPDATE_DISPLAY);
-
         return START_STICKY;
     }
 
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+    }
+    private String convert(long t) {
+        int s = (int) (t % 60);
+        int m = (int) ((t / 60) % 60);
+        int h = (int) ((t / 3600));
+
+        return h + ":" + pad(m) + ":" + pad(s);
+    }
+
+    private String pad(int n) {
+        if (n >= 10) {
+            return String.valueOf(n);
+        } else {
+            return "0" + String.valueOf(n);
+        }
+    }
+    private String getUptime(){
+        long ut = SystemClock.elapsedRealtime() / 1000;
+
+        if (ut == 0) {
+            ut = 1;
+        }
+        mUpTime=convert(ut);
+        return mUpTime;
+    }
+
+    public static int getmConnectedMinutes() {
+        return mConnectedMinutes;
+    }
+
+    public static String getSerial() {
+        return serial;
+    }
+
     private void initDdwData(){
-        mDATA.setConnected(isConnected);
-        mDATA.setmConnectedMinutes(mConnectedMinutes);
+        mDATA.setConnected(isNetWorkConnected());
+        mDATA.setmConnectedMinutes(getmConnectedMinutes());
+        mDATA.setSerial(getSerial());
+        mDATA.setmUpTime(getUptime());
     }
 
     private void postData(){
@@ -124,14 +198,39 @@ public class DdwService extends Service {
     
 
     private void connectStatusConfig() {
-        if (mConnectivityManager != null) {
-            NetworkInfo info = mConnectivityManager.getActiveNetworkInfo();
-            if (info != null && info.isConnected()) {
-            	isConnected=true;
-            	return;
+
+
+        //异步获取网络连接状态
+        Observable.create(new ObservableOnSubscribe<Boolean>(){
+            @Override
+            public void subscribe(ObservableEmitter<Boolean> e) throws Exception {
+                Log.e("bbb","subscribe   ObservableEmitter==111");
+
+                Boolean isConnected=NetworkUtils.isNetworkConnected(DdwService.this);
+                Log.e("bbb","subscribe   ObservableEmitter=="+isConnected);
+
+                e.onNext(isConnected);
             }
-        }
-        isConnected=false;
+        }).subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread()).subscribe(new Consumer<Boolean>() {
+            @Override
+            public void accept(Boolean aBoolean) throws Exception {
+                Log.e("bbb","subscribe   aBoolean=="+aBoolean);
+            }
+        });
+        isConnected=NetworkUtils.isNetworkConnected(this);
+//
+//        if (mConnectivityManager != null) {
+//            NetworkInfo info = mConnectivityManager.getActiveNetworkInfo();
+//            if (info != null && info.isConnected()) {
+//                if (info.getState() == NetworkInfo.State.CONNECTED)
+//                {
+//                    // 当前所连接的网络可用
+//                    isConnected=true;
+//                }
+//            	return;
+//            }
+//        }
+//        isConnected=false;
     }
     private boolean isNetWorkConnected() {
     	return isConnected;
@@ -160,12 +259,13 @@ public class DdwService extends Service {
         });
     }
 
+    int aa=0;
     private  class MyHandler extends Handler {
         @Override
         public void handleMessage(Message msg) {
 			switch (msg.what) {
 			case EVENT_UPDATE_STATS:
-				Log.e("aa", "getNowTime==" + TimeUtils.getNowTime());
+				Log.e(TAG, "getNowTime==" + TimeUtils.getNowTime());
 				mConnectedMinutes = mSharedPreferences.getInt(PREF_CONNECTED_MINUTES, 0);
 				String mDayOfYearRecorded = mSharedPreferences.getString(PREF_DAY_MONTH_YEAR_RECORD, " ");
 				mDayOfYearNow = TimeUtils.getNowTime();
@@ -173,9 +273,9 @@ public class DdwService extends Service {
 //				if(mConnectedMinutes<60){
 				if (mDayOfYearNow.equals(mDayOfYearRecorded)) {
 					if (isNetWorkConnected()) {
-						Log.e("aa","111");
+						Log.e(TAG,"111");
 						//������������ʱ���ۼ�
-						Log.e("aa","minutesRecorded=="+mConnectedMinutes);
+						Log.e(TAG,"minutesRecorded=="+mConnectedMinutes);
 						mConnectedMinutes++;
 						mSharedPreferences.edit().putInt(PREF_CONNECTED_MINUTES, mConnectedMinutes).commit();
 					}
@@ -184,7 +284,7 @@ public class DdwService extends Service {
 					if (isNetWorkConnected()) {
 						// �ϴ����ݵ����������ݿ�
 						isUploadData = true;
-						Log.e("aa","222");
+						Log.e(TAG,"222");
 						//��������ʱ�仹ԭ
                         uploadData(mConnectedMinutes);
                         mSharedPreferences.edit().putString(PREF_DAY_MONTH_YEAR_RECORD, mDayOfYearNow).commit();
@@ -200,6 +300,70 @@ public class DdwService extends Service {
                 break;
 
             }
+        }
+    }
+
+    //每隔 1s 执行一次任务，立即执行第一次任务，执行无限次
+    private  DisposableObserver<Long> getTimeDemoObserver(){
+        return  new DisposableObserver<Long>() {
+            @Override
+            public void onNext(Long aLong) {
+                postData();
+            }
+            @Override
+            public void onError(Throwable e) {
+
+            }
+
+            @Override
+            public void onComplete() {
+
+            }
+        };
+    }
+    CompositeDisposable mCompositeDisposable = new CompositeDisposable();
+    private void startPostData() {
+        Log.d(TAG, "startPostData");
+        mCompositeDisposable = new CompositeDisposable();
+        DisposableObserver<Long> disposableObserver = getTimeDemoObserver();
+        Observable.interval(0, 1000, TimeUnit.MILLISECONDS).subscribeOn(Schedulers.io()).subscribe(disposableObserver);
+        mCompositeDisposable.add(disposableObserver);
+    }
+
+    private void stopPostData() {
+        Log.d(TAG, "stopPostData");
+        mCompositeDisposable.dispose();
+    }
+
+    private final IBinder mBinder = new ServiceStub(this);
+
+
+    /*
+     * By making this a static class with a WeakReference to the Service, we
+     * ensure that the Service can be GCd even when the system process still
+     * has a remote reference to the stub.
+     */
+    static class ServiceStub extends IDdwService.Stub {
+        WeakReference<DdwService> mService;
+
+        ServiceStub(DdwService service) {
+            mService = new WeakReference<DdwService>(service);
+        }
+
+        @Override
+        public void startPostData() throws RemoteException {
+            mService.get().startPostData();
+        }
+
+        @Override
+        public void stopPostData() throws RemoteException {
+            mService.get().stopPostData();
+
+        }
+
+        @Override
+        public void basicTypes(int anInt, long aLong, boolean aBoolean, float aFloat, double aDouble, String aString) throws RemoteException {
+
         }
     }
     
