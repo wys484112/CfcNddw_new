@@ -20,6 +20,8 @@ import butterknife.BindView;
 import butterknife.ButterKnife;
 
 public class MainActivity2 extends BaseActivity {
+    private static final boolean DBG = true;
+    private static final String TAG = "aaa";
 
     @BindView(R.id.networkconnected)
     TextView txtConnectedStatus;
@@ -38,16 +40,18 @@ public class MainActivity2 extends BaseActivity {
         RxBus.get().register(this);
         mHandler = new MyHandler();
 
-    }
-
-    @Override
-    protected void onStart() {
-        super.onStart();
         mToken = ServiceUtils.bindToService(this, osc);
         if (mToken == null) {
             // something went wrong
             Toast.makeText(this, "service error!", Toast.LENGTH_LONG).show();
         }
+
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+
 
     }
 
@@ -101,7 +105,8 @@ public class MainActivity2 extends BaseActivity {
         if (ut == 0) {
             ut = 1;
         }
-        Log.e("aaa", convert(ut));
+        if (DBG)
+            Log.e(TAG, convert(ut));
         txtTime.setText(getString(R.string.connectedtime) + DdwService.mConnectedMinutes + getString(R.string.minutes));
         txtSerial.setText(getString(R.string.serialnumber) + DdwService.serial);
         txtConnectedStatus.setText(getString(R.string.networkconnectedstatus) + (DdwService.isConnected ? getString(R.string.connected) : getString(R.string.closed)));
@@ -111,14 +116,15 @@ public class MainActivity2 extends BaseActivity {
     }
 
     @Subscribe
-    void updateTimes(DdwData data) {
+    public void updateTimes(DdwData data) {
         long at = SystemClock.uptimeMillis() / 1000;
         long ut = SystemClock.elapsedRealtime() / 1000;
 
         if (ut == 0) {
             ut = 1;
         }
-        Log.e("aaa", convert(ut));
+        if (DBG)
+            Log.e(TAG, convert(ut));
         txtTime.setText(getString(R.string.connectedtime) + data.getmConnectedMinutes() + getString(R.string.minutes));
         txtSerial.setText(getString(R.string.serialnumber) + data.getSerial());
         txtConnectedStatus.setText(getString(R.string.networkconnectedstatus) + (data.isConnected() ? getString(R.string.connected) : getString(R.string.closed)));
@@ -165,7 +171,8 @@ public class MainActivity2 extends BaseActivity {
 
         @Override
         public void onServiceDisconnected(ComponentName classname) {
-            Log.e("aaa","onServiceDisconnected");
+            if (DBG)
+                Log.e(TAG,"onServiceDisconnected");
             mService = null;
         }
     };

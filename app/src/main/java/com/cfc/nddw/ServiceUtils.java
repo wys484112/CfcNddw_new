@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.TimeZone;
 public class ServiceUtils {
 	private static final String TAG = "aaa";
+    private static final boolean DBG = true;
 
 	/**
 	 * �жϷ����Ƿ���
@@ -76,10 +77,12 @@ public class ServiceUtils {
 		ServiceBinder sb = new ServiceBinder(callback);
 		if (cw.bindService((new Intent()).setClass(cw, DdwService.class), sb, 0)) {
 			sConnectionMap.put(cw, sb);
-			Log.e(TAG, "bind to service");
+            if (DBG)
+                Log.e(TAG, "bind to service");
 			return new ServiceToken(cw);
 		}
-		Log.e(TAG, "Failed to bind to service");
+        if (DBG)
+            Log.e(TAG, "Failed to bind to service");
 		return null;
 	}
 
@@ -91,14 +94,16 @@ public class ServiceUtils {
 		ContextWrapper cw = token.mWrappedContext;
 		ServiceBinder sb = sConnectionMap.remove(cw);
 		if (sb == null) {
-			Log.e(TAG, "Trying to unbind for unknown Context");
+            if (DBG)
+                Log.e(TAG, "Trying to unbind for unknown Context");
 			return;
 		}
 		cw.unbindService(sb);
 		if (sConnectionMap.isEmpty()) {
 			// presumably there is nobody interested in the service at this point,
 			// so don't hang on to the ServiceConnection
-			Log.e(TAG, "unbind to service");
+            if (DBG)
+                Log.e(TAG, "unbind to service");
 
 			sService = null;
 		}

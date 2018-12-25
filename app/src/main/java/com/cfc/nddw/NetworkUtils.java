@@ -22,6 +22,7 @@ import java.util.HashMap;
 
 public class NetworkUtils {
 	private static final String TAG = "aaa";
+	private static final boolean DBG = true;
 
 	//判断是否有网络连接
 	public static boolean isNetworkConnected(Context context) {
@@ -92,7 +93,8 @@ public class NetworkUtils {
 			while ((content = in.readLine()) != null) {
 				stringBuffer.append(content);
 			}
-			Log.d("bbb", "result content : " + stringBuffer.toString());
+			if (DBG)
+				Log.d(TAG, "result content : " + stringBuffer.toString());
 			// ping的状态
 			int status = p.waitFor();
 			if (status == 0) {
@@ -106,7 +108,8 @@ public class NetworkUtils {
 		} catch (InterruptedException e) {
 			result = "InterruptedException";
 		} finally {
-			Log.d("bbb", "result = " + result);
+			if (DBG)
+				Log.d(TAG, "result = " + result);
 		}
 		return false;
 	}

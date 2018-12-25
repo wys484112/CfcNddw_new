@@ -18,6 +18,7 @@ import android.net.NetworkInfo;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.os.Debug;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -37,9 +38,6 @@ import android.widget.Toast;
 import com.hwangjr.rxbus.RxBus;
 
 import java.lang.ref.WeakReference;
-import java.text.BreakIterator;
-import java.util.Calendar;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import cn.bmob.v3.Bmob;
@@ -55,8 +53,6 @@ import io.reactivex.disposables.CompositeDisposable;
 import io.reactivex.functions.Consumer;
 import io.reactivex.observers.DisposableObserver;
 import io.reactivex.schedulers.Schedulers;
-
-import static android.icu.lang.UCharacter.GraphemeClusterBreak.T;
 
 public class DdwService extends Service {
 
@@ -82,28 +78,34 @@ public class DdwService extends Service {
     public static String mDayOfYearNow = " ";
     public static boolean isUploadData = false;
     private DdwData mDATA = new DdwData();
-//    public static String APPID = "52f26b1d55df6b5488d8a0a54c823c56"; //wuyinshengs appid
+    public static String APPID = "52f26b1d55df6b5488d8a0a54c823c56"; //wuyinshengs appid
 
-    public static String APPID = "90a7bac606c1cb143bbe2b9688ef6026"; //cfcs  appid
+//    public static String APPID = "90a7bac606c1cb143bbe2b9688ef6026"; //cfcs  appid
 
     @Override
     public void onCreate() {
         super.onCreate();
-        Log.d(TAG, "onCreate");
+        if (DBG)
+            Log.d(TAG, "onCreate");
         Bmob.initialize(this, APPID);
 
 
         mSharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
         mConnectivityManager = (ConnectivityManager)
                 getSystemService(Context.CONNECTIVITY_SERVICE);
+        monitorNetworkConnectionStatus();
+
+
         mConnectedMinutes = mSharedPreferences.getInt(PREF_CONNECTED_MINUTES, 0);
         connectStatusConfig();
         getUptime();
 
-        monitorNetworkConnectionStatus();
         //任务轮询调度方式  first  handler+
         mHandler = new MyHandler();
-        mHandler.sendEmptyMessage(EVENT_UPDATE_STATS);
+//        mHandler.sendEmptyMessage(EVENT_UPDATE_STATS);
+
+        startUpdateStatus();//service为main线程，另起新线程处理数据更新上传。
+
 //        mHandler.sendEmptyMessage(EVENT_UPDATE_DISPLAY);
 
 
@@ -111,6 +113,60 @@ public class DdwService extends Service {
 //        startPostData();
 
     }
+
+
+    CompositeDisposable mStatusCompositeDisposable = new CompositeDisposable();
+
+    //每隔 1分钟 执行一次任务，立即执行第一次任务，执行无限次
+    private DisposableObserver<Long> getUpdateStatusObserver() {
+        return new DisposableObserver<Long>() {
+            @Override
+            public void onNext(Long aLong) {
+                if (DBG)
+                    Log.e(TAG, "getNowTime==" + TimeUtils.getNowTime());
+                mConnectedMinutes = mSharedPreferences.getInt(PREF_CONNECTED_MINUTES, 0);
+                String mDayOfYearRecorded = mSharedPreferences.getString(PREF_DAY_MONTH_YEAR_RECORD, " ");
+                mDayOfYearNow = TimeUtils.getNowTime();
+
+//				if(mConnectedMinutes%4<3){
+                if (mDayOfYearNow.equals(mDayOfYearRecorded)) {
+                    if (isNetWorkConnected()) {
+                        if (DBG)
+                            Log.e(TAG, "minutesRecorded==" + mConnectedMinutes);
+                        mConnectedMinutes++;
+                        mSharedPreferences.edit().putInt(PREF_CONNECTED_MINUTES, mConnectedMinutes).commit();
+                    }
+
+                } else {
+                    if (isNetWorkConnected()) {
+                        isUploadData = true;
+                        if (DBG)
+                            Log.e(TAG, "222");
+                        uploadData(mConnectedMinutes);
+                        mSharedPreferences.edit().putString(PREF_DAY_MONTH_YEAR_RECORD, mDayOfYearNow).commit();
+                    }
+                }
+            }
+
+            @Override
+            public void onError(Throwable e) {
+            }
+
+            @Override
+            public void onComplete() {
+            }
+        };
+    }
+
+    private void startUpdateStatus() {
+        if (DBG)
+            Log.d(TAG, "startUpdateStatus");
+        mStatusCompositeDisposable = new CompositeDisposable();
+        DisposableObserver<Long> disposableObserver = getUpdateStatusObserver();
+        Observable.interval(0, 10000, TimeUnit.MILLISECONDS).subscribeOn(Schedulers.newThread()).subscribe(disposableObserver);
+        mStatusCompositeDisposable.add(disposableObserver);
+    }
+
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -129,13 +185,15 @@ public class DdwService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Log.d(TAG, "onStartCommand");
+        if (DBG)
+            Log.d(TAG, "onStartCommand");
         return START_STICKY;
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
+        mStatusCompositeDisposable.dispose();
     }
 
     private String convert(long t) {
@@ -172,80 +230,21 @@ public class DdwService extends Service {
         return serial;
     }
 
-    private void initDdwData() {
+    private boolean isNetWorkConnected() {
+        return isConnected;
+    }
+
+    private void DdwDataConfig() {
         mDATA.setConnected(isNetWorkConnected());
         mDATA.setmConnectedMinutes(getmConnectedMinutes());
         mDATA.setSerial(getSerial());
         mDATA.setmUpTime(getUptime());
     }
 
-    private void postData() {
-        initDdwData();
+    private void postDdwData() {
+        DdwDataConfig();
         RxBus.get().post(mDATA);
     }
-
-    private void monitorNetworkConnectionStatus() {
-        BroadcastReceiver receiver = new BroadcastReceiver() {
-            public void onReceive(Context context, Intent intent) {
-                String action = intent.getAction();
-                if (intent.getAction().equals(ConnectivityManager.CONNECTIVITY_ACTION)) {
-                    connectStatusConfig();
-                    postData();
-                }
-            }
-        };
-        IntentFilter intentFilter = new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION);
-        registerReceiver(receiver, intentFilter);
-    }
-
-
-    private void connectStatusConfig() {
-
-
-        //异步获取网络连接状态
-        Observable.create(new ObservableOnSubscribe<Boolean>() {
-            @Override
-            public void subscribe(ObservableEmitter<Boolean> e) throws Exception {
-                Log.e("bbb", "subscribe   ObservableEmitter==111");
-
-                Boolean isConnected = NetworkUtils.ping();//(DdwService.this);
-                Log.e("bbb", "subscribe   ObservableEmitter==" + isConnected);
-
-                e.onNext(isConnected);
-            }
-        }).subscribeOn(Schedulers.io())
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(new Consumer<Boolean>() {
-                    @Override
-                    public void accept(Boolean aBoolean) throws Exception {
-                        isConnected=aBoolean;
-                        Log.e("bbb", "subscribe   aBoolean==" + aBoolean);
-                    }
-                });
-        isConnected = NetworkUtils.isNetworkConnected(this);
-//
-//        if (mConnectivityManager != null) {
-//            NetworkInfo info = mConnectivityManager.getActiveNetworkInfo();
-//            if (info != null && info.isConnected()) {
-//                if (info.getState() == NetworkInfo.State.CONNECTED)
-//                {
-//                    // 当前所连接的网络可用
-//                    isConnected=true;
-//                }
-//            	return;
-//            }
-//        }
-//        isConnected=false;
-    }
-
-    private boolean isNetWorkConnected() {
-        return isConnected;
-    }
-
-    private static final int EVENT_UPDATE_STATS = 500;
-    private static final int EVENT_UPDATE_DISPLAY = 501;
-
-    private Handler mHandler;
 
     private void uploadData(int minutes) {
         NDdwInfo mInfo = new NDdwInfo();
@@ -255,17 +254,65 @@ public class DdwService extends Service {
             @Override
             public void done(String objectId, BmobException e) {
                 if (e == null) {
-                    mConnectedMinutes = 1;
-                    mSharedPreferences.edit().putInt(PREF_CONNECTED_MINUTES, 1).commit();
-                    Log.e("aaa", "添加数据成功，返回objectId为：" + objectId);
+                    mConnectedMinutes = 0;
+                    mSharedPreferences.edit().putInt(PREF_CONNECTED_MINUTES, 0).commit();
+                    if (DBG)
+                        Log.e("aaa", "添加数据成功，返回objectId为：" + objectId);
                 } else {
-                    Log.e("aaa", "创建数据失败：" + e.getMessage());
+                    if (DBG)
+                        Log.e("aaa", "创建数据失败：" + e.getMessage());
                 }
             }
         });
     }
 
-    int aa = 0;
+    private void monitorNetworkConnectionStatus() {
+        BroadcastReceiver receiver = new BroadcastReceiver() {
+            public void onReceive(Context context, Intent intent) {
+                String action = intent.getAction();
+                if (intent.getAction().equals(ConnectivityManager.CONNECTIVITY_ACTION)) {
+                    connectStatusConfig();
+                }
+            }
+        };
+        IntentFilter intentFilter = new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION);
+        registerReceiver(receiver, intentFilter);
+    }
+
+
+    private void connectStatusConfig() {
+        //异步获取网络连接状态
+        Observable.create(new ObservableOnSubscribe<Boolean>() {
+            @Override
+            public void subscribe(ObservableEmitter<Boolean> e) throws Exception {
+                if (DBG)
+                    Log.e("aaa", "subscribe   ObservableEmitter==111");
+//                Log.i(TAG, "ObservableOnSubscribe:"+Thread.currentThread().getName());
+                Boolean isConnected = NetworkUtils.ping();//(DdwService.this);
+                if (DBG)
+                    Log.e("aaa", "subscribe   ObservableEmitter==" + isConnected);
+
+                e.onNext(isConnected);
+            }
+        }).subscribeOn(Schedulers.io())//ObservableOnSubscribe subscribe 的线程
+                .observeOn(AndroidSchedulers.mainThread())  //subscriber accept 的线程
+                .subscribe(new Consumer<Boolean>() {
+                    @Override
+                    public void accept(Boolean aBoolean) throws Exception {
+//                        Log.i(TAG, "subscribe:"+Thread.currentThread().getName());
+                        isConnected = aBoolean;
+                        if (DBG)
+                            Log.e("bbb", "subscribe   aBoolean==" + aBoolean);
+                    }
+                });
+    }
+
+
+    private static final int EVENT_UPDATE_STATS = 500;
+    private static final int EVENT_UPDATE_DISPLAY = 501;
+
+    private Handler mHandler;
+
 
     private class MyHandler extends Handler {
         @Override
@@ -280,29 +327,25 @@ public class DdwService extends Service {
 //				if(mConnectedMinutes<60){
                     if (mDayOfYearNow.equals(mDayOfYearRecorded)) {
                         if (isNetWorkConnected()) {
-                            Log.e(TAG, "111");
-                            //������������ʱ���ۼ�
-                            Log.e(TAG, "minutesRecorded==" + mConnectedMinutes);
+                            if (DBG)
+                                Log.e(TAG, "minutesRecorded==" + mConnectedMinutes);
                             mConnectedMinutes++;
                             mSharedPreferences.edit().putInt(PREF_CONNECTED_MINUTES, mConnectedMinutes).commit();
                         }
 
                     } else {
                         if (isNetWorkConnected()) {
-                            // �ϴ����ݵ����������ݿ�
                             isUploadData = true;
-                            Log.e(TAG, "222");
-                            //��������ʱ�仹ԭ
+                            if (DBG)
+                                Log.e(TAG, "222");
                             uploadData(mConnectedMinutes);
                             mSharedPreferences.edit().putString(PREF_DAY_MONTH_YEAR_RECORD, mDayOfYearNow).commit();
                         }
-
                     }
-//                postData();
                     sendEmptyMessageDelayed(EVENT_UPDATE_STATS, 60000);
                     break;
                 case EVENT_UPDATE_DISPLAY:
-                    postData();
+                    postDdwData();
                     sendEmptyMessageDelayed(EVENT_UPDATE_DISPLAY, 1000);
                     break;
 
@@ -311,11 +354,11 @@ public class DdwService extends Service {
     }
 
     //每隔 1s 执行一次任务，立即执行第一次任务，执行无限次
-    private DisposableObserver<Long> getTimeDemoObserver() {
+    private DisposableObserver<Long> getPostDataObserver() {
         return new DisposableObserver<Long>() {
             @Override
             public void onNext(Long aLong) {
-                postData();
+                postDdwData();
             }
 
             @Override
@@ -333,15 +376,17 @@ public class DdwService extends Service {
     CompositeDisposable mCompositeDisposable = new CompositeDisposable();
 
     private void startPostData() {
-        Log.d(TAG, "startPostData");
+        if (DBG)
+            Log.d(TAG, "startPostData");
         mCompositeDisposable = new CompositeDisposable();
-        DisposableObserver<Long> disposableObserver = getTimeDemoObserver();
-        Observable.interval(0, 1000, TimeUnit.MILLISECONDS).subscribeOn(Schedulers.io()).subscribe(disposableObserver);
+        DisposableObserver<Long> disposableObserver = getPostDataObserver();
+        Observable.interval(0, 1000, TimeUnit.MILLISECONDS).subscribeOn(Schedulers.newThread()).subscribe(disposableObserver);
         mCompositeDisposable.add(disposableObserver);
     }
 
     private void stopPostData() {
-        Log.d(TAG, "stopPostData");
+        if (DBG)
+            Log.d(TAG, "stopPostData");
         mCompositeDisposable.dispose();
     }
 
