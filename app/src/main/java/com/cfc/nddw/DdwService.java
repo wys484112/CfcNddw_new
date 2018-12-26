@@ -78,9 +78,9 @@ public class DdwService extends Service {
     public static String mDayOfYearNow = " ";
     public static boolean isUploadData = false;
     private DdwData mDATA = new DdwData();
-    public static String APPID = "52f26b1d55df6b5488d8a0a54c823c56"; //wuyinshengs appid
+//    public static String APPID = "52f26b1d55df6b5488d8a0a54c823c56"; //wuyinshengs appid
 
-//    public static String APPID = "90a7bac606c1cb143bbe2b9688ef6026"; //cfcs  appid
+    public static String APPID = "90a7bac606c1cb143bbe2b9688ef6026"; //cfcs  appid
 
     @Override
     public void onCreate() {
@@ -163,7 +163,7 @@ public class DdwService extends Service {
             Log.d(TAG, "startUpdateStatus");
         mStatusCompositeDisposable = new CompositeDisposable();
         DisposableObserver<Long> disposableObserver = getUpdateStatusObserver();
-        Observable.interval(0, 10000, TimeUnit.MILLISECONDS).subscribeOn(Schedulers.newThread()).subscribe(disposableObserver);
+        Observable.interval(0, 60000, TimeUnit.MILLISECONDS).subscribeOn(Schedulers.newThread()).subscribe(disposableObserver);
         mStatusCompositeDisposable.add(disposableObserver);
     }
 
